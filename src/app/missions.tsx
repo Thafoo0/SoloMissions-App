@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useFocusEffect, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Modal, Platform, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import Swipeable, {
   SwipeDirection,
@@ -27,6 +27,7 @@ import {
   spawnDailiesIfNewDay,
   toggleTaskStatus,
 } from '../utils/storage';
+import { supabase } from '../utils/supabase';
 
 type Task = {
   id: string;
@@ -230,6 +231,28 @@ function TrashButton({ onPress, label, color }: { onPress: () => void; label: st
   );
 }
 
+// Ask first, then sign out. The root layout sends the user to /auth once the session ends.
+function confirmSignOut() {
+  const message = 'Are you sure you want to sign out?';
+
+  const signOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) Alert.alert('Sign out failed', error.message);
+  };
+
+  // Alert.alert does nothing on the web version, so use the browser confirm there
+  if (Platform.OS === 'web') {
+    const confirmFn = (globalThis as any).confirm as ((text: string) => boolean) | undefined;
+    if (confirmFn && confirmFn(message)) signOut();
+    return;
+  }
+
+  Alert.alert('Sign Out', message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Sign Out', style: 'destructive', onPress: signOut },
+  ]);
+}
+
 // ---------- Screen ----------
 export default function MissionTracking() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -239,6 +262,24 @@ export default function MissionTracking() {
   // Weekly evaluation popup
   const [showWeeklyReport, setShowWeeklyReport] = useState(false);
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStats | null>(null);
+
+  // Sign out button in the header (top right)
+  const navigation = useNavigation();
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={confirmSignOut}
+          hitSlop={12}
+          style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Sign out"
+        >
+          <Ionicons name="log-out-outline" size={24} color={colors.text} />
+        </Pressable>
+      ),
+    });
+  }, [navigation]);
 
   // Spawn today's dailies first, then read the updated list
   const load = useCallback(async () => {
@@ -687,6 +728,8 @@ const styles = StyleSheet.create({
   reportLine: { color: colors.textMuted, fontSize: 14, fontStyle: 'italic', marginTop: 14, marginBottom: 24 },
   acceptButton: { alignSelf: 'stretch', borderRadius: 6, paddingVertical: 14, alignItems: 'center' },
   acceptText: { color: colors.background, fontSize: 16, fontWeight: '800', letterSpacing: 1 },
+
+  headerButton: { marginRight: 16 },
 
   // Swipe panels
   swipeAction: { width: 100, alignItems: 'center', justifyContent: 'center' },
